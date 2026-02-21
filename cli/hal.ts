@@ -10,7 +10,7 @@ import path from 'path';
 import readline from 'readline';
 
 import { Marked } from 'marked';
-import markedTerminal from 'marked-terminal';
+import { markedTerminal } from 'marked-terminal';
 
 import { CliRequest, CliResponse, HistoryMessage } from '../src/cli-protocol.js';
 
