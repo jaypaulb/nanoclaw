@@ -143,16 +143,16 @@ async function runInteractive(socket: net.Socket): Promise<void> {
       case 'chunk':
         if (waitingForResponse) {
           // First chunk — print the prefix
-          process.stdout.write(`\n  ${GREEN}Hal:${RESET} `);
+          process.stdout.write(`\n  ${GREEN}Hal:${RESET}${GREEN} `);
           waitingForResponse = false;
         }
-        process.stdout.write(renderMarkdown(msg.text));
+        process.stdout.write(`${GREEN}${renderMarkdown(msg.text)}${RESET}`);
         break;
 
       case 'done':
         if (!waitingForResponse) {
           // We received chunks, add newlines
-          process.stdout.write('\n\n');
+          process.stdout.write(`${RESET}\n\n`);
         } else {
           // No output chunks received
           waitingForResponse = false;
@@ -247,14 +247,14 @@ async function runOneShot(socket: net.Socket, text: string): Promise<void> {
 
           case 'chunk':
             if (!hasOutput) {
-              process.stdout.write(`\n  ${GREEN}Hal:${RESET} `);
+              process.stdout.write(`\n  ${GREEN}Hal:${RESET}${GREEN} `);
               hasOutput = true;
             }
-            process.stdout.write(renderMarkdown(msg.text));
+            process.stdout.write(`${GREEN}${renderMarkdown(msg.text)}${RESET}`);
             break;
 
           case 'done':
-            if (hasOutput) process.stdout.write('\n\n');
+            if (hasOutput) process.stdout.write(`${RESET}\n\n`);
             socket.end();
             process.exit(exitCode);
             break;
