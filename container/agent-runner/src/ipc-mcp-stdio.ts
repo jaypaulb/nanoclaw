@@ -274,6 +274,69 @@ Use available_groups.json to find the JID for a group. The folder name should be
   },
 );
 
+const QUESTIONS_DIR = path.join(IPC_DIR, 'questions');
+const ANSWERS_DIR = path.join(IPC_DIR, 'answers');
+
+server.tool(
+  'ask_user',
+  `Ask the user a question and wait for their answer. Use this when you need clarification, a choice between options, or any interactive input from the user.
+
+When the user is connected via CLI (desktop), this displays a structured prompt with numbered options they can select from. When connected via WhatsApp, the question is sent as a regular message and the user replies naturally.
+
+Use this instead of just including a question in your response text when you need a definitive answer before proceeding.`,
+  {
+    question: z.string().describe('The question to ask the user'),
+    options: z.array(z.string()).optional().describe('Optional list of choices for the user to pick from'),
+  },
+  async (args) => {
+    const id = `q-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+    fs.mkdirSync(QUESTIONS_DIR, { recursive: true });
+    fs.mkdirSync(ANSWERS_DIR, { recursive: true });
+
+    // Write question for the host to pick up
+    const questionData = {
+      id,
+      question: args.question,
+      options: args.options,
+      timestamp: new Date().toISOString(),
+    };
+    const tempPath = path.join(QUESTIONS_DIR, `${id}.json.tmp`);
+    const finalPath = path.join(QUESTIONS_DIR, `${id}.json`);
+    fs.writeFileSync(tempPath, JSON.stringify(questionData, null, 2));
+    fs.renameSync(tempPath, finalPath);
+
+    // Poll for the answer (timeout after 5 minutes)
+    const answerPath = path.join(ANSWERS_DIR, `${id}.json`);
+    const timeoutMs = 300_000;
+    const pollMs = 500;
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+      if (fs.existsSync(answerPath)) {
+        try {
+          const data = JSON.parse(fs.readFileSync(answerPath, 'utf-8'));
+          fs.unlinkSync(answerPath);
+          return {
+            content: [{ type: 'text' as const, text: data.answer }],
+          };
+        } catch {
+          // File not fully written yet, retry
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, pollMs));
+    }
+
+    // Timeout — clean up question file if still there
+    try { fs.unlinkSync(finalPath); } catch { /* already consumed */ }
+
+    return {
+      content: [{ type: 'text' as const, text: 'No response received (timed out after 5 minutes).' }],
+      isError: true,
+    };
+  },
+);
+
 // Start the stdio transport
 const transport = new StdioServerTransport();
 await server.connect(transport);

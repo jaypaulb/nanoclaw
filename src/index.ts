@@ -16,6 +16,7 @@ import {
   writeGroupsSnapshot,
   writeTasksSnapshot,
 } from './container-runner.js';
+import { startCliServer, stopCliServer } from './cli-server.js';
 import { cleanupOrphans, ensureContainerRuntimeRunning } from './container-runtime.js';
 import {
   getAllChats,
@@ -412,6 +413,7 @@ async function main(): Promise<void> {
   // Graceful shutdown handlers
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'Shutdown signal received');
+    stopCliServer();
     await queue.shutdown(10000);
     for (const ch of channels) await ch.disconnect();
     process.exit(0);
@@ -461,6 +463,15 @@ async function main(): Promise<void> {
     writeGroupsSnapshot: (gf, im, ag, rj) => writeGroupsSnapshot(gf, im, ag, rj),
   });
   queue.setProcessMessagesFn(processGroupMessages);
+
+  // CLI server — desktop interface sharing context with WhatsApp
+  startCliServer({
+    runAgent,
+    registeredGroups: () => registeredGroups,
+    sessions: () => sessions,
+    queue,
+  });
+
   recoverPendingMessages();
   startMessageLoop();
 }

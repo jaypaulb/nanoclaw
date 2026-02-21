@@ -308,6 +308,37 @@ export function getNewMessages(
   return { messages: rows, newTimestamp };
 }
 
+export interface RecentMessage {
+  id: string;
+  chat_jid: string;
+  sender: string;
+  sender_name: string;
+  content: string;
+  timestamp: string;
+  is_from_me: number;
+  is_bot_message: number;
+}
+
+/**
+ * Get the most recent N messages for a chat, including bot messages.
+ * Used for CLI history display.
+ */
+export function getRecentMessages(
+  chatJid: string,
+  limit: number = 20,
+): RecentMessage[] {
+  const sql = `
+    SELECT id, chat_jid, sender, sender_name, content, timestamp, is_from_me, is_bot_message
+    FROM messages
+    WHERE chat_jid = ?
+    ORDER BY timestamp DESC
+    LIMIT ?
+  `;
+  const rows = db.prepare(sql).all(chatJid, limit) as RecentMessage[];
+  // Return in chronological order
+  return rows.reverse();
+}
+
 export function getMessagesSince(
   chatJid: string,
   sinceTimestamp: string,

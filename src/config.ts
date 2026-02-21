@@ -66,3 +66,11 @@ export const TRIGGER_PATTERN = new RegExp(
 // Uses system timezone by default
 export const TIMEZONE =
   process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+// CLI socket for desktop interaction
+export const CLI_SOCKET_PATH = path.join(
+  HOME_DIR,
+  '.config',
+  'nanoclaw',
+  'cli.sock',
+);
