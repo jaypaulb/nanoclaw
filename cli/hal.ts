@@ -104,23 +104,16 @@ function displayAskUser(question: string, options?: string[]): void {
   }
 }
 
-// --- Spinner ---
-
-const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+// --- Thinking indicator ---
 
 function startSpinner(): { stop: () => void } {
-  let i = 0;
-  const interval = setInterval(() => {
-    const frame = SPINNER_FRAMES[i % SPINNER_FRAMES.length];
-    process.stdout.write(`\r  ${GREEN}${frame} Hal is thinking...${RESET}`);
-    i++;
-  }, 80);
+  // Print thinking message on its own line
+  process.stdout.write(`\n  ${DIM}⏳ Hal is thinking...${RESET}`);
 
   return {
     stop: () => {
-      clearInterval(interval);
-      // Clear the spinner line
-      process.stdout.write('\r\x1b[2K');
+      // Move up one line and clear it
+      process.stdout.write(`\x1b[1A\x1b[2K`);
     },
   };
 }
@@ -151,6 +144,8 @@ async function runInteractive(socket: net.Socket): Promise<void> {
   let waitingForAskUser: { id: string; options?: string[] } | null = null;
   let spinner: { stop: () => void } | null = null;
   let buffer = '';
+  let pasteBuffer: string[] = [];
+  let pasteTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Queue to serialize async typewriter output
   let outputChain = Promise.resolve();
@@ -260,9 +255,17 @@ async function runInteractive(socket: net.Socket): Promise<void> {
       return;
     }
 
-    waitingForResponse = true;
-    spinner = startSpinner();
-    send(socket, { type: 'message', text: trimmed });
+    // Buffer rapid-fire lines (paste detection) — combine into one message
+    pasteBuffer.push(trimmed);
+    if (pasteTimer) clearTimeout(pasteTimer);
+    pasteTimer = setTimeout(() => {
+      const combined = pasteBuffer.join('\n');
+      pasteBuffer = [];
+      pasteTimer = null;
+      waitingForResponse = true;
+      if (!spinner) spinner = startSpinner();
+      send(socket, { type: 'message', text: combined });
+    }, 50);
   });
 
   rl.on('close', () => {
