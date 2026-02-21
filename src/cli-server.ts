@@ -124,12 +124,15 @@ export function startCliServer(deps: CliServerDeps): void {
       logger.info('CLI client disconnected');
       activeClient = null;
       questionWatcher.stop();
+      // Signal active container to wind down so the queue slot frees up
+      deps.queue.closeStdin(CLI_JID);
     });
 
     socket.on('error', (err) => {
       logger.warn({ err }, 'CLI socket error');
       activeClient = null;
       questionWatcher.stop();
+      deps.queue.closeStdin(CLI_JID);
     });
   });
 
