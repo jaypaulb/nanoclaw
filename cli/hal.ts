@@ -104,6 +104,40 @@ function displayAskUser(question: string, options?: string[]): void {
   }
 }
 
+// --- Spinner ---
+
+const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
+function startSpinner(): { stop: () => void } {
+  let i = 0;
+  const interval = setInterval(() => {
+    const frame = SPINNER_FRAMES[i % SPINNER_FRAMES.length];
+    process.stdout.write(`\r  ${GREEN}${frame} Hal is thinking...${RESET}`);
+    i++;
+  }, 80);
+
+  return {
+    stop: () => {
+      clearInterval(interval);
+      // Clear the spinner line
+      process.stdout.write('\r\x1b[2K');
+    },
+  };
+}
+
+// --- Typewriter effect ---
+
+async function typewrite(text: string): Promise<void> {
+  const WORD_DELAY = 12; // ms between words
+  const words = text.split(/( +)/); // preserve whitespace
+  for (const word of words) {
+    process.stdout.write(word);
+    if (word.trim()) {
+      await new Promise((r) => setTimeout(r, WORD_DELAY));
+    }
+  }
+}
+
 // --- Mode: Interactive ---
 
 async function runInteractive(socket: net.Socket): Promise<void> {
@@ -115,7 +149,11 @@ async function runInteractive(socket: net.Socket): Promise<void> {
 
   let waitingForResponse = false;
   let waitingForAskUser: { id: string; options?: string[] } | null = null;
+  let spinner: { stop: () => void } | null = null;
   let buffer = '';
+
+  // Queue to serialize async typewriter output
+  let outputChain = Promise.resolve();
 
   socket.on('data', (data) => {
     buffer += data.toString();
@@ -141,33 +179,50 @@ async function runInteractive(socket: net.Socket): Promise<void> {
         break;
 
       case 'chunk':
-        if (waitingForResponse) {
-          // First chunk — print the prefix
-          process.stdout.write(`\n  ${GREEN}Hal:${RESET}${GREEN} `);
-          waitingForResponse = false;
+        if (spinner) {
+          spinner.stop();
+          spinner = null;
         }
-        process.stdout.write(`${GREEN}${renderMarkdown(msg.text)}${RESET}`);
+        outputChain = outputChain.then(async () => {
+          if (waitingForResponse) {
+            process.stdout.write(`\n  ${GREEN}Hal:${RESET}${GREEN} `);
+            waitingForResponse = false;
+          }
+          await typewrite(`${GREEN}${renderMarkdown(msg.text)}${RESET}`);
+        });
         break;
 
       case 'done':
-        if (!waitingForResponse) {
-          // We received chunks, add newlines
-          process.stdout.write(`${RESET}\n\n`);
-        } else {
-          // No output chunks received
-          waitingForResponse = false;
-          console.log(`\n  ${DIM}(no response)${RESET}\n`);
+        if (spinner) {
+          spinner.stop();
+          spinner = null;
         }
-        rl.prompt();
+        outputChain = outputChain.then(() => {
+          if (!waitingForResponse) {
+            process.stdout.write(`${RESET}\n\n`);
+          } else {
+            waitingForResponse = false;
+            console.log(`\n  ${DIM}(no response)${RESET}\n`);
+          }
+          rl.prompt();
+        });
         break;
 
       case 'error':
+        if (spinner) {
+          spinner.stop();
+          spinner = null;
+        }
         console.log(`\n  ${RED}Error: ${msg.error}${RESET}\n`);
         waitingForResponse = false;
         rl.prompt();
         break;
 
       case 'ask_user':
+        if (spinner) {
+          spinner.stop();
+          spinner = null;
+        }
         waitingForAskUser = { id: msg.id, options: msg.options };
         displayAskUser(msg.question, msg.options);
         rl.setPrompt(`  ${YELLOW}>${RESET} `);
@@ -206,6 +261,7 @@ async function runInteractive(socket: net.Socket): Promise<void> {
     }
 
     waitingForResponse = true;
+    spinner = startSpinner();
     send(socket, { type: 'message', text: trimmed });
   });
 
@@ -229,6 +285,8 @@ async function runOneShot(socket: net.Socket, text: string): Promise<void> {
   let buffer = '';
   let hasOutput = false;
   let exitCode = 0;
+  let spinner: { stop: () => void } | null = null;
+  let outputChain = Promise.resolve();
 
   socket.on('data', (data) => {
     buffer += data.toString();
@@ -246,20 +304,36 @@ async function runOneShot(socket: net.Socket, text: string): Promise<void> {
             break;
 
           case 'chunk':
-            if (!hasOutput) {
-              process.stdout.write(`\n  ${GREEN}Hal:${RESET}${GREEN} `);
-              hasOutput = true;
+            if (spinner) {
+              spinner.stop();
+              spinner = null;
             }
-            process.stdout.write(`${GREEN}${renderMarkdown(msg.text)}${RESET}`);
+            outputChain = outputChain.then(async () => {
+              if (!hasOutput) {
+                process.stdout.write(`\n  ${GREEN}Hal:${RESET}${GREEN} `);
+                hasOutput = true;
+              }
+              await typewrite(`${GREEN}${renderMarkdown(msg.text)}${RESET}`);
+            });
             break;
 
           case 'done':
-            if (hasOutput) process.stdout.write(`${RESET}\n\n`);
-            socket.end();
-            process.exit(exitCode);
+            if (spinner) {
+              spinner.stop();
+              spinner = null;
+            }
+            outputChain.then(() => {
+              if (hasOutput) process.stdout.write(`${RESET}\n\n`);
+              socket.end();
+              process.exit(exitCode);
+            });
             break;
 
           case 'error':
+            if (spinner) {
+              spinner.stop();
+              spinner = null;
+            }
             console.error(`\n  ${RED}Error: ${msg.error}${RESET}\n`);
             exitCode = 1;
             break;
@@ -288,6 +362,7 @@ async function runOneShot(socket: net.Socket, text: string): Promise<void> {
 
   // Wait a beat for history to arrive (and be ignored), then send
   setTimeout(() => {
+    spinner = startSpinner();
     send(socket, { type: 'message', text });
   }, 100);
 }
