@@ -52,6 +52,16 @@ function copyTree(src: string, dst: string): number {
     }
     // Skip dangling symlinks (e.g. v1's .claude/debug/latest pointer).
     if (entry.isSymbolicLink() && !fs.existsSync(s)) continue;
+    // Resolve symlinks: if the target is a directory, recurse into it
+    // (Claude Code's projects index uses symlinks like
+    // `-home-...-groups-main -> -workspace-group`).
+    if (entry.isSymbolicLink()) {
+      const resolved = fs.statSync(s);
+      if (resolved.isDirectory()) {
+        written += copyTree(s, d);
+        continue;
+      }
+    }
     if (fs.existsSync(d)) continue;
     fs.copyFileSync(s, d);
     written += 1;
